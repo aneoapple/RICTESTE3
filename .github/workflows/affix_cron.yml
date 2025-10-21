@@ -19,13 +19,16 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install requests pymupdf
+          pip install pymupdf requests
 
-      - name: Fetch PDFs from manifest
-        run: |
-          python scripts/fetch_pdfs.py
+      # Se você já baixa os PDFs em outro job/pasta, informe aqui:
+      # env:
+      #   PDF_DIRS: "data/affix/raw,/outros/caminhos/de/pdfs"
 
       - name: Extract PDF snippets
+        env:
+          PDF_DIRS: "${{ env.PDF_DIRS }}"
+          MAX_CHARS_PER_DOC: "7000"
         run: |
           python scripts/extract_pdf_snippets.py
 
@@ -34,14 +37,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add pdf_snippets.json
-          git commit -m "chore(affix): update pdf_snippets.json" || echo "no changes"
+          git commit -m "chore: update pdf_snippets.json" || echo "no changes"
           git push
 
       - name: Post to GAS (optional)
         if: ${{ secrets.GAS_URL != '' }}
         env:
           GAS_URL: ${{ secrets.GAS_URL }}
-          USER_QUERY: "Teste automático: responda se houver base."
+          USER_QUERY: "Smoke test: responder se houver base."
           USER_AGENT: "github-actions/affix_cron"
         run: |
           python scripts/post_to_gas.py
