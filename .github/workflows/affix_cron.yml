@@ -1,23 +1,47 @@
-# ...
-      - name: Run site scraper and context builder
-        env:
-          PYTHONUNBUFFERED: "1"
-        run: |
-          python scripts/scraper_sites.py || echo "scraper de sites retornou status !=0, mas seguimos"
+name: Extract PDF snippets and send to GAS
 
-      - name: Commit & push if changed
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "15 6 * * *"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pymupdf
+
+      - name: Fetch PDFs from manifest
+        run: |
+          python scripts/fetch_pdfs.py
+
+      - name: Extract PDF snippets
+        run: |
+          python scripts/extract_pdf_snippets.py
+
+      - name: Commit pdf_snippets.json
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
-          # Garante que o novo arquivo de contexto dos sites também seja adicionado
-          git add data/affix/raw/sites_context.txt
-          
-          git add -A
-          if git diff --staged --quiet; then
-            echo "No changes to commit."
-          else
-            # Mude a mensagem de commit para refletir as mudanças
-            git commit -m "chore(affix): update PDFs + site context [skip ci]"
-            git push
-          fi
+          git add pdf_snippets.json
+          git commit -m "chore(affix): update pdf_snippets.json" || echo "no changes"
+          git push
+
+      - name: Post to GAS (optional)
+        if: ${{ secrets.GAS_URL != '' }}
+        env:
+          GAS_URL: ${{ secrets.GAS_URL }}
+          USER_QUERY: "Teste automático: responda se houver base."
+          USER_AGENT: "github-actions/affix_cron"
+        run: |
+          python scripts/post_to_gas.py
