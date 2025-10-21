@@ -1,0 +1,43 @@
+name: Extract PDF snippets and send to GAS
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "15 6 * * *"  # diário 06:15 UTC
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pymupdf requests
+
+      - name: Extract PDF snippets
+        run: |
+          python scripts/extract_pdf_snippets.py
+
+      - name: Commit pdf_snippets.json
+        run: |
+          git config user.name "crion-bot"
+          git config user.email "crion-bot@users.noreply.github.com"
+          git add pdf_snippets.json
+          git commit -m "chore: update pdf_snippets.json" || echo "no changes"
+          git push
+
+      - name: Post to GAS (optional)
+        if: ${{ secrets.GAS_URL != '' }}
+        env:
+          GAS_URL: ${{ secrets.GAS_URL }}
+          USER_QUERY: "Teste automático: informe fluxo e documentos, se houver base."
+          USER_AGENT: "github-actions/affix_cron"
+        run: |
+          python scripts/post_to_gas.py
