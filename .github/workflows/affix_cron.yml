@@ -21,6 +21,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install pymupdf requests
 
+      - name: Fetch PDFs from manifest
+        run: |
+          python scripts/fetch_pdfs.py
+
       - name: Extract PDF snippets
         run: |
           python scripts/extract_pdf_snippets.py
@@ -33,11 +37,11 @@ jobs:
           git commit -m "chore: update pdf_snippets.json" || echo "no changes"
           git push
 
-      - name: Post to GAS (optional)
+      - name: Post to GAS
         if: ${{ secrets.GAS_URL != '' }}
         env:
           GAS_URL: ${{ secrets.GAS_URL }}
-          USER_QUERY: "Teste automático: informe fluxo e documentos, se houver base."
+          USER_QUERY: "Teste automático: responda se houver base e cite as fontes."
           USER_AGENT: "github-actions/affix_cron"
         run: |
           python scripts/post_to_gas.py
