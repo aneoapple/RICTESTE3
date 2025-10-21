@@ -1,0 +1,20 @@
+# ... (código anterior)
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          # Adicione o pacote para interagir com o Google Drive (se for fazer o upload direto)
+          pip install requests beautifulsoup4 lxml google-api-python-client google-auth-httplib2 google-auth-oauthlib
+
+      # ... (Run crawler fetch_affix.py) ...
+      
+      # NOVO PASSO: Rodar o Scraper de Sites e criar o contexto
+      - name: Run site scraper and context builder
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          # Você precisará configurar a autenticação do Google Cloud (GSA Key) 
+          # no GitLab/GitHub Secrets para permitir o upload para o Drive.
+          python scripts/scraper_sites.py || echo "scraper de sites retornou status !=0, mas seguimos"
+      
+# ... (restante do cron para commit/push)
