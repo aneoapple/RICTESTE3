@@ -1,0 +1,8 @@
+[URL]: https://www.affix.com.br/exemplo
+[EXTRACT]:
+Texto limpo e útil do site. Sem HTML. Títulos e listas reduzidos. Conteúdo público relevante.
+
+---
+[URL]: https://www.hapvida.com.br/exemplo
+[EXTRACT]:
+Outro bloco de texto limpo.
