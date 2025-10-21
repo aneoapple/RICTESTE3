@@ -1,92 +1,74 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Lê PDFs em data/affix/raw, extrai texto e gera pdf_snippets.json.
-Regras conservadoras: remove quebras excessivas, limita tamanho por arquivo.
-Dep.: pip install pymupdf
-"""
-import json, os, re, sys, pathlib
+# Lê PDFs e gera pdf_snippets.json com trechos úteis.
+# Pastas lidas: data/affix/raw + outras via env PDF_DIRS="path1,path2"
+import os, re, json, pathlib, sys
 from datetime import datetime
 
 try:
     import fitz  # PyMuPDF
-except Exception as e:
-    print("ERROR: PyMuPDF não instalado. Adicione 'pymupdf' ao pip.", file=sys.stderr)
-    raise
+except Exception:
+    print("PyMuPDF não instalado. pip install pymupdf", file=sys.stderr); raise
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-PDF_DIR = ROOT / "data" / "affix" / "raw"
+DEFAULT_DIRS = [ROOT / "data" / "affix" / "raw"]
+EXTRA_DIRS = [pathlib.Path(p.strip()) for p in os.getenv("PDF_DIRS","").split(",") if p.strip()]
+PDF_DIRS = [p for p in (DEFAULT_DIRS + EXTRA_DIRS) if p.exists()]
+
 OUT_JSON = ROOT / "pdf_snippets.json"
+MAX_CHARS = int(os.getenv("MAX_CHARS_PER_DOC","7000"))  # limite por doc
+MIN_KEEP  = 400
 
-MAX_CHARS_PER_DOC = int(os.getenv("MAX_CHARS_PER_DOC", "6000"))  # seguro p/ prompt
-MIN_CHARS_KEEP = 400  # ignora PDFs vazios
+KEYS = [r"document", r"regras", r"fluxo", r"prazo", r"envio", r"exigido", r"contato", r"email", r"anexo"]
 
-KEY_ORDER = [
-    r"^sum[aá]rio", r"^introdu", r"^objetivo", r"^escopo",
-    r"fluxo", r"regras", r"documentos", r"prazo", r"observa", r"anexo"
-]
-
-def clean_text(s: str) -> str:
-    s = s.replace("\x00", " ")
+def clean(s:str)->str:
+    s = s.replace("\x00"," ")
     s = re.sub(r"[ \t]+\n", "\n", s)
     s = re.sub(r"\n{3,}", "\n\n", s)
     s = re.sub(r"[ \t]{2,}", " ", s)
-    s = s.strip()
-    return s
+    return s.strip()
 
-def rank_sections(txt: str) -> str:
-    # Heurística simples: privilegia blocos que contêm palavras-chave conhecidas.
+def score_block(b:str)->int:
+    lb = b.lower()
+    return sum(3 for k in KEYS if re.search(k, lb)) + min(len(b)//500, 6)
+
+def best_chunks(txt:str)->str:
     blocks = re.split(r"\n{2,}", txt)
-    scored = []
+    blocks.sort(key=score_block, reverse=True)
+    out, cur = [], 0
     for b in blocks:
-        score = 0
-        lb = b.lower()
-        for i, k in enumerate(KEY_ORDER):
-            if re.search(k, lb):
-                score += (len(KEY_ORDER) - i) * 2
-        score += min(len(b)//500, 5)  # um pouco de peso por tamanho
-        scored.append((score, b))
-    scored.sort(reverse=True, key=lambda x: x[0])
-    top = "\n\n".join([b for _, b in scored[:12]])
-    return top
+        if cur >= MAX_CHARS: break
+        out.append(b); cur += len(b)+2
+    s = clean("\n\n".join(out))
+    return s[:MAX_CHARS].rsplit("\n",1)[0] if len(s)>MAX_CHARS else s
 
-def extract_pdf_text(pdf_path: pathlib.Path) -> str:
+def extract_pdf(p: pathlib.Path)->str:
     try:
-        doc = fitz.open(pdf_path)
+        doc = fitz.open(p)
     except Exception:
         return ""
-    chunks = []
-    for page in doc:
+    pages = []
+    for pg in doc:
         try:
-            chunks.append(page.get_text("text"))
+            pages.append(pg.get_text("text"))
         except Exception:
             continue
     doc.close()
-    txt = clean_text("\n".join(chunks))
-    if len(txt) <= MAX_CHARS_PER_DOC:
+    txt = clean("\n".join(pages))
+    if len(txt) <= MAX_CHARS:
         return txt
-    ranked = rank_sections(txt)
-    ranked = clean_text(ranked)
-    if len(ranked) > MAX_CHARS_PER_DOC:
-        ranked = ranked[:MAX_CHARS_PER_DOC].rsplit("\n", 1)[0]
-    return ranked
+    return best_chunks(txt)
 
 def main():
-    if not PDF_DIR.exists():
-        print(f"AVISO: pasta não existe: {PDF_DIR}", file=sys.stderr)
-        OUT_JSON.write_text("[]", encoding="utf-8")
-        return
-
     items = []
-    for p in sorted(PDF_DIR.rglob("*.pdf")):
-        text = extract_pdf_text(p)
-        if len(text) < MIN_CHARS_KEEP:
-            continue
-        items.append({
-            "name": p.name,
-            "snippets": text
-        })
-
+    seen = set()
+    for base in PDF_DIRS:
+        for pdf in sorted(base.rglob("*.pdf")):
+            if pdf.name in seen: continue
+            seen.add(pdf.name)
+            t = extract_pdf(pdf)
+            if len(t) >= MIN_KEEP:
+                items.append({"name": pdf.name, "snippets": t})
     OUT_JSON.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Wrote {OUT_JSON} ({len(items)} docs) at {datetime.utcnow().isoformat()}Z")
 
